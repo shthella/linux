@@ -1,0 +1,17 @@
+#include "system-conf.dtsi"
+
+/ {
+    axi {
+        vconv_ip:vconv_ip@ffa00000 {
+                status = "okay";
+                compatible = "xlnx,vconv_ip";
+		reg  =  < 0x00 0xffa00000 0x00 0x1000>;
+                command-addr = <0x00000000>; //28 bytes
+                input-addr = <0x1fffffff>;//200704 bytes
+                output-addr = <0x3fffffff>;//50176 bytes  
+                interrupts = < 0 16 4 >;//<irq_type irq_number irq_flags>
+                interrupt-parent = <&gic>; // interrupt controller common from arm platforms 
+        };
+    };
+};
+
