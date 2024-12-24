@@ -118,7 +118,7 @@ static ssize_t conv_write(struct file *file, const char __user *buf, size_t len,
         pr_err("device is NULL");
         return -ENODEV;
     }
-	if(conv_dev->last_cmd==0){
+	if(conv_dev->last_cmd==1){
 		if(len > INPUT_SIZE){
        	 		printk("Input exceeds buffer size\n");
        	 		return -EINVAL;
@@ -130,7 +130,7 @@ static ssize_t conv_write(struct file *file, const char __user *buf, size_t len,
     		}
 	}
 
-	else if(conv_dev->last_cmd==1){
+	else if(conv_dev->last_cmd==2){
 		if(len > CMD_SIZE){
        			printk("commands exceeds buffer size\n");
         		return -EINVAL;
