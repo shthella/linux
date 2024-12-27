@@ -9,8 +9,9 @@
 #define CMD_DATA  "cmd.bin"
 #define OUTPUT_FILE "output.bin"
 
-#define INPUT_SIZE 224*224*4(200704)
-#define OUTPUT_SIZE 112*112*4(50176)
+#define DEVICE_NAME "/dev/conv_ip"
+#define INPUT_SIZE 224*224*4
+#define OUTPUT_SIZE 112*112*4
 #define CMD_SIZE 28
 
 #define IOCTL_INPUT_IMAGE       _IOW('C', 1, unsigned long)
@@ -30,7 +31,7 @@ int main(){
    // char *input = argv[1];
 
     // Open the device file
-    fd = open("/dev/conv_ip", O_RDWR); //fd has unique value for this open call store in fd table in (fops) to open in kernel. 
+    fd = open(DEVICE_NAME, O_RDWR); //fd has unique value for this open call store in fd table in (fops) to open in kernel. 
     if (fd < 0){
         printf("Failed to open device");
         return -1;
@@ -40,9 +41,9 @@ int main(){
 /*-------FILE open and read image to buffer and read cmd.tx and read to buffer--------------*/
  
     // open image from input file
-    infile = fopen(IMAGE_PATH, "rb");//read for 
+    infile = fopen(IMAGE_PATH, "rb");
     if (!infile){
-        printf("Failed to open image");
+        printf("Failed to open image.bin");
         close(fd);
         return -1;
     }
@@ -50,21 +51,29 @@ int main(){
     //read command data to cmdfile
     cmdfile = fopen(CMD_DATA,"rb");
     if(!cmdfile){
-    	printf("error for open cmd.txt");
+    	printf("error for open cmd.bin");
     	close(fd);
     	return -1;
     	}
-    
+    printf("the bin files are opened\n");
     //read the data to input data buffer from the infile file  and store in input_data
-    fread(input_data,INPUT_SIZE,1, infile);
+    if(fread(input_data,INPUT_SIZE,1, infile)<0){
+    	perror("Failed to write to inputfile");
+        close(fd);
+        return -1;
+    } 
        
     //read the dat from cmd file to cmd_data
-    fread(cmd_data,CMD_SIZE,1,cmdfile);
+    if(fread(cmd_data,CMD_SIZE,1,cmdfile) < 0){
+    	perror("Failed to write to cmdfile");
+        close(fd);
+        return -1;
+    } 
     	
     
     fclose(cmdfile);
     fclose(infile);
-    printf("image and cmd.txt is loaded siuccessfully to files\n");
+    printf("image.bin and cmd.bin is loaded siuccessfully to files\n");
 /*--------------------end-------------------*/
 
 
@@ -79,7 +88,11 @@ int main(){
     }
 
     // Write input data to the driver
-    write(fd, input_data, INPUT_SIZE); //from input_data to fd , fd links the kernel (to,from and size )
+    if(write(fd, input_data, INPUT_SIZE) < 0){ //from input_data to fd , fd links the kernel (to,from and size )
+       perror("Failed to input to device");
+        close(fd);
+        return -1;
+    } 
     	
     
     //ioctl cmd
@@ -89,7 +102,11 @@ int main(){
         return -1;
     }
     
-    write(fd,cmd_data,CMD_SIZE);
+    if(write(fd,cmd_data,CMD_SIZE) < 0){
+    	perror("Failed to cmd to device");
+        close(fd);
+        return -1;
+    } 
     	
     	
     printf("Input data sent to driver\n");
@@ -107,7 +124,12 @@ int main(){
 /*--------------------end-------------------*/
   
     // Read output data from the driver
-    read(fd, output_data, OUTPUT_SIZE);
+    if(read(fd, output_data, OUTPUT_SIZE) < 0){
+    	perror("Failed to read to user");
+        close(fd);
+        return -1;
+    } 
+    printf("data is %x\n" ,output_data);
        
     printf("Output data received from driver\n");
 /*--------------------end-------------------*/
@@ -125,7 +147,11 @@ int main(){
 /*-----------the write to file from buffer--------------*/
 
      //write the output data into a output file  
-    fwrite(output_data, 1, OUTPUT_SIZE, outfile);
+    if(fwrite(output_data, 1, OUTPUT_SIZE, outfile) < 0){
+    	perror("Failed to write to outputfile");
+        close(fd);
+        return -1;
+    } 
        
     fclose(outfile);
     printf("Output data saved to file\n");
@@ -142,6 +168,5 @@ int main(){
     // Close the device
     close(fd);
     printf("Device closed\n");
-
     return 0;
 }

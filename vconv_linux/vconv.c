@@ -16,10 +16,10 @@
 
 // Constants and addresses
 #define INPUT_ADDR        0x00000000 //1 
-#define INPUT_SIZE        (224 * 224 * 4)
+#define INPUT_SIZE        224 * 224 * 4
 //
 #define OUTPUT_ADDR       0x0000ffff //2
-#define OUTPUT_SIZE       (112 * 112 * 4)
+#define OUTPUT_SIZE       112 * 112 * 4
 
 
 #define AXI_BASE_ADDR     0xB0000010  //send input to this address which we get from user in ddr 
@@ -59,7 +59,7 @@ struct conv_ip {
     struct class *conv_class;
     struct work_struct output_data_work_queue; //schedule work for bg process of handling interrupt (bottom halves)
     struct mutex process_data_work;
-    //void __iomem* = is used for specially for i/o operations (mmio)
+    //void __iomem*  is used for specially for i/o operations (mmio)
     void __iomem *input_buffer; // For storing the file from user in DDR 
     void __iomem *output_buffer; // For storing the output in DDR
     void __iomem *cmd_buffer; // For command register base
@@ -80,7 +80,7 @@ static int conv_release(struct inode *inode, struct file *file);
 static ssize_t conv_write(struct file *file, const char __user *buf, size_t len, loff_t *off);
 static ssize_t conv_read(struct file *file, char __user *buf, size_t len, loff_t *off);
 static long conv_ioctl(struct file *file, unsigned int cmd, unsigned long arg);
-static irqreturn_t irq_handler(int irq, void *dev_id);
+//static irqreturn_t irq_handler(int irq, void *dev_id);
 
 
 // File Operations
@@ -113,11 +113,14 @@ static int conv_release(struct inode *inode, struct file *file) {
 
 // Write Data to Input Buffer and store it in DDR on sucess it returns len
 static ssize_t conv_write(struct file *file, const char __user *buf, size_t len, loff_t *off) {
-    struct conv_device *conv_dev = file->private_data;
+    struct conv_ip *conv_dev = file->private_data;
     if(!file->private_data){
         pr_err("device is NULL");
         return -ENODEV;
     }
+ 
+    printf("last_cmd is :%d\n",conv_dev->last_cmd);
+
 	if(conv_dev->last_cmd==1){
 		if(len > INPUT_SIZE){
        	 		printk("Input exceeds buffer size\n");
@@ -140,31 +143,34 @@ static ssize_t conv_write(struct file *file, const char __user *buf, size_t len,
       		return -EFAULT;
       		}
 	}
-
-    printk("Input image  and commands written to input buffer and command buffer in DDR\n");
-    return len;
+	printk("Input image  and commands written to input buffer and command buffer in DDR\n");
+	return len;
 }
 
 
 // Read Data from Output Buffer after convolution and store it in DDR on success it returns len
 static ssize_t conv_read(struct file *file, char __user *buf, size_t len, loff_t *off) {
-        struct conv_device *conv_dev = file->private_data;
+        struct conv_ip *conv_dev = file->private_data;
         output_data_work_wq = false;
+
 	//lock the mutex while the output buffer for multiple access
 	mutex_lock(&conv_dev->process_data_work);
-   	if (len > OUTPUT_SIZE) {
-        printk("Read size exceeds output buffer size\n");	//lock mechanism 
-        return -EINVAL;
-    }
-	if (copy_to_user(buf, conv_dev->output_data, len)) {
-        printk("Failed to copy output data to userspace\n");
-        return -EFAULT;
-    }	
-    //unlock after sending data to user 
-    mutex_unlock(&conv_dev->process_data_work);
+   	
+	//checks the if the user given length is greater than defined size it returns error 
+	if (len > OUTPUT_SIZE) {
+        	printk("Read size exceeds output buffer size\n");	
+        	return -EINVAL;
+    	}
+	if (copy_to_user((buf, (void __iomem *)conv_dev->output_data, len)) {
+        	printk("Failed to copy output data to userspace\n");
+        	return -EFAULT;
+    	}	
+    	
+	//unlock after sending data to user 
+    	mutex_unlock(&conv_dev->process_data_work);
 
-    printk("Output data read from DDR and sent to userspace\n");
-    return len;
+    	printk("Output data read from DDR and sent to userspace\n");
+    	return len;
 }
 
 //workqueue function 
@@ -174,43 +180,42 @@ static void workqueue_fn(struct work_struct *work){
 	if(!conv_dev->output_data){
 		printk("error while allocating memory");
 	}
-        //lock this for dont access the shared resource 
-        mutex_lock(&conv_dev->process_data_work);
 
         if(output_data_work_wq == false){	
 	//to read all data to output from output buffer 
 	for(int i = 0; i < OUTPUT_SIZE / 4; i++){
 		*((u32 *)conv_dev->output_data) = ioread32(conv_dev->output_buffer + (i*4));
-	}
+		}
 	}
 
 	printk("output data read from output buffer to ouput_data\n");
 
 	output_data_work_wq = true;
+
+	//unlock after data process
 	mutex_unlock(&conv_dev->process_data_work);
 	kfree(conv_dev->output_data);
 }
 
+
 // Start Convolution using command
 static int start_conv(struct conv_ip *conv_dev) {
 	mutex_lock(&conv_dev->process_data_work); //lock
-        writel(0x42, (void __iomem *)START); // CMD1 to start the operation
+     //   writel(0x42, (void __iomem *)START); // CMD1 to start the operation
     	//printk("errror while start\n");
-    	mutex_unlock(&conv_dev->process_data_work); //unlock
     	
-    printk("Convolution started\n");
-    return 0;
-    
-}
+        printk("Convolution started\n");
+        return 0;
+	}
 
 // Stop Convolution using command
 static int stop_conv(void) {
-        writel(0x05, (void __iomem *)STOP); // CMD5 to stop the operation
+     //   writel(0x05, (void __iomem *)STOP); // CMD5 to stop the operation
     	//printk("errror while stop\n");
     	
-    printk("Convolution stopped\n");
-    return 0;
-}
+    	printk("Convolution stopped\n");
+    	return 0;
+	}
 
 // IOCTL Handler
 static long conv_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
@@ -226,14 +231,16 @@ static long conv_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
     		if(conv_dev->last_cmd == 1){
     			conv_dev->last_cmd = 2;
     			}
+    		
     	    break;
 
         case IOCTL_START_CONV:
-            start_conv();
+            start_conv(conv_dev);
             break;
 
         case IOCTL_STOP_CONV:
-            stop_conv();
+            stop_conv(conv_dev);
+            conv_dev->last_cmd = 0;
             break;
 
         default:
@@ -247,20 +254,21 @@ static irqreturn_t irq_handler(int irq, void *dev_id) {
     uint32_t status;
 
     status = readl((void __iomem *)STATUS); // Check the status at CMD4 (DMA Read Status)
+    
     if (status & 0x1) { 
-        printk("Convolution operation completed\n");
-
-        writel(0x1, (void __iomem *)CLEAR); // CMD7 to clear interrupt
-        printk("Interrupt cleared\n");
-    } else {
-        printk("Unexpected interrupt status: 0x%x\n", status);
-    }
+	    printk("Convolution operation completed\n");
+	    writel(0x1, (void __iomem *)CLEAR); // CMD7 to clear interrupt
+	    printk("Interrupt cleared\n");
+    	} 
+    else {    
+	    status = status | 0x01;
+	    write(status ,(void __iomeme *)CLEAR);
+	    printk("Unexpected interrupt status: 0x%x\n", status);
+    	}
 
     //schedule the work queue 
-   schedule_work(&conv_dev->output_data_work_queue);
-
+    schedule_work(&conv_dev->output_data_work_queue);
     printk("workqueue function is called to store output data in output buffer");
-
     return IRQ_HANDLED;
 }
 
@@ -290,9 +298,9 @@ static int conv_probe(struct platform_device *pdev) {
     // Map AXI Base Address to get the memory resource from platform device node in device tree
     res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
     if (!res) {
-    pr_err("Failed to get memory resource\n");
-    return -ENODEV;
-}
+    	pr_err("Failed to get memory resource\n");
+    	return -ENODEV;
+    }
 
     conv_dev->axi_base = ioremap(res->start, resource_size(res));
     if (IS_ERR(conv_dev->axi_base)) {
@@ -327,30 +335,30 @@ static int conv_probe(struct platform_device *pdev) {
 
     //read a integer value from device-tree iff success returns 0 if it error returns -EINVAL,-E 
     ret = of_property_read_u64(node,"input-addr",&input_addr);
-   	if(ret){
-    		pr_err("Failed to read input-addr from device tree\n");
-		return ret;
+    if(ret){
+    	pr_err("Failed to read input-addr from device tree\n");
+	return ret;
 	}
    
     //command property from device-tree
     ret = of_property_read_u64(node,"command-addr",&command_addr);
-   	if(ret){
-    		pr_err("Failed to read cmd-addr from device tree\n");
-		return ret;
+    if(ret){
+	pr_err("Failed to read cmd-addr from device tree\n");
+	return ret;
 	}
     //output property from device-tree
     ret = of_property_read_u64(node,"output-addr",&output_addr);
-   	if(ret){
-    		pr_err("Failed to read output-addr from device tree\n");
-		return -EINVAL;
+    if(ret){
+    	pr_err("Failed to read output-addr from device tree\n");
+	return -EINVAL;
 	}
 
-   // printk("read from device-tree properties are input = %s , cmd = %s and out = %s\n ",); 
+    // printk("read from device-tree properties are input = %s , cmd = %s and out = %s\n ",); 
 
     // Work queue initialization (after mutex) (Dynamic initialization) 
     INIT_WORK(&conv_dev->output_data_work_queue, workqueue_fn);
 
-     // Initialize mutex (to protect shared resources)
+    // Initialize mutex (to protect shared resources)
     mutex_init(&conv_dev->process_data_work);
     // Allocate and Register Character Device
     ret = alloc_chrdev_region(&conv_dev->devt, 0, 1, "conv_ip");
@@ -375,7 +383,7 @@ static int conv_probe(struct platform_device *pdev) {
     if(IS_ERR(device_create(conv_dev->conv_class, NULL, conv_dev->devt, NULL, "conv_ip"))){
 	    printk("error for device creation\n");
 	    goto err_unregister_cdev;
-}
+    }
 
     // Request IRQ
     conv_dev->irq = platform_get_irq(pdev, 0);
@@ -386,7 +394,7 @@ static int conv_probe(struct platform_device *pdev) {
     ret = request_irq(conv_dev->irq, irq_handler, IRQF_SHARED, "conv_irq", conv_dev);
     if (ret)
         goto err_irq;
-
+    
     // Output data work queue initialization
     output_data_work_wq = false;
 
@@ -403,7 +411,6 @@ err_class_create:
     class_destroy(conv_dev->conv_class);
     kfree(conv_dev);
     return ret;
-
 }
 
 // Remove Function for platform driver
