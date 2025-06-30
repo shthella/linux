@@ -1,0 +1,25 @@
+// check Is tty device created or not using below command
+	ls /dev|grep ttyphani
+// Write data to uart1 using below command
+	echo -n "hi hello" > /dev/ttyphani2
+//Read data from uart1 using below command
+	cat /dev/ttyphani2
+Note: when started reading, we have to give stop signal using ctrl+c because uart1 doesnot have any end of data it can arrive anytime
+// when changing one baud rate to another baud rate using stty below command
+	stty -F /dev/ttyphani2 9600
+//check baud rate is changed or not using below command
+	stty -F /dev/ttyphani2 -a
+//Again, Write data to uart1 using below command
+	echo -n "hi harsha" > /dev/ttyphani2
+//Again, Read data from uart1 using below command
+	cat /dev/ttyphani2 
+//Again, changing baud rate to max 115200 using below command
+	stty -F /dev/ttyphani2 115200
+//Again, check baud rate is changed or not using below command
+	stty -F /dev/ttyphani2 -a
+//Again, Write data to uart1 using below command
+	echo -n "hi harsha" > /dev/ttyphani2
+//Again, Read data from uart1 using below command
+	cat /dev/ttyphani2 
+Note: while changing baud rate the min value should be 9600 and max value should be 115200 (this min and max i had set in uart driver code).
+
